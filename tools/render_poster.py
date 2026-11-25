@@ -11,6 +11,7 @@ directory: writes entry.png (1024x1024, PNG, under 1 MiB).
 """
 
 from PIL import Image, ImageDraw, ImageFont
+import os
 
 W = H = 1024
 PAPER = (247, 242, 231)
@@ -21,6 +22,17 @@ BAND = (20, 18, 14)
 WHITE = (250, 248, 243)
 
 FONT_DIR = "/usr/share/fonts/truetype/noto/"
+
+# Named palette / layout constants (previously inline literals).
+BODY_INK = (52, 48, 40)
+DIVIDER_GREY = (196, 188, 168)
+COLUMN_GUTTER = 40
+GRID_ROW_HEIGHT = 140
+KICKER_SIZE = 18
+KICKER_ADVANCE = 27
+HEADLINE_LEADING = 1.15
+BLURB_LEADING = 1.3
+BLURB_GAP = 3
 
 
 def font(name, size):
@@ -34,12 +46,26 @@ SANS_BOLD = "NotoSans-Bold.ttf"
 SANS = "NotoSans-Regular.ttf"
 
 
-def wrap(draw, text, fnt, max_w):
+def check_fonts():
+    missing = [name for name in (SERIF_BLACK, SERIF_BOLD, SANS_BLACK, SANS_BOLD, SANS)
+               if not os.path.isfile(FONT_DIR + name)]
+    if missing:
+        raise SystemExit("missing required font file(s): " + ", ".join(missing))
+
+
+def fit_font(canvas, text, start_size, max_width, name, min_size=12):
+    size = start_size
+    while size > min_size and canvas.textlength(text, font=font(name, size)) > max_width:
+        size -= 1
+    return font(name, size)
+
+
+def wrap(canvas, text, fnt, max_w):
     """Greedy word wrap; returns list of lines that fit max_w."""
     lines, cur = [], ""
     for word in text.split():
         trial = (cur + " " + word).strip()
-        if draw.textlength(trial, font=fnt) <= max_w:
+        if canvas.textlength(trial, font=fnt) <= max_w:
             cur = trial
         else:
             if cur:
@@ -50,70 +76,71 @@ def wrap(draw, text, fnt, max_w):
     return lines
 
 
-def draw_block(draw, x, y, w, kicker, headline, blurb, head_size=27, blurb_size=18):
+def draw_block(canvas, x, y, w, kicker, headline, blurb, head_size=27, blurb_size=18):
     """One news block: red kicker, serif headline, sans blurb. Returns height used."""
-    draw.text((x, y), kicker, font=font(SANS_BLACK, 18), fill=RED)
-    y += 27
+    canvas.text((x, y), kicker, font=font(SANS_BLACK, KICKER_SIZE), fill=RED)
+    y += KICKER_ADVANCE
     hf = font(SERIF_BOLD, head_size)
-    for line in wrap(draw, headline, hf, w):
-        draw.text((x, y), line, font=hf, fill=INK)
-        y += int(head_size * 1.15)
-    y += 3
+    for line in wrap(canvas, headline, hf, w):
+        canvas.text((x, y), line, font=hf, fill=INK)
+        y += int(head_size * HEADLINE_LEADING)
+    y += BLURB_GAP
     bf = font(SANS, blurb_size)
-    for line in wrap(draw, blurb, bf, w):
-        draw.text((x, y), line, font=bf, fill=(52, 48, 40))
-        y += int(blurb_size * 1.3)
+    for line in wrap(canvas, blurb, bf, w):
+        canvas.text((x, y), line, font=bf, fill=BODY_INK)
+        y += int(blurb_size * BLURB_LEADING)
     return y
 
 
 def main():
+    check_fonts()
     img = Image.new("RGB", (W, H), PAPER)
-    d = ImageDraw.Draw(img)
-    M = 40
-    CW = W - 2 * M
+    draw = ImageDraw.Draw(img)
+    MARGIN = 40
+    CONTENT_WIDTH = W - 2 * MARGIN
 
     # --- top hairline + dateline strip -----------------------------------
-    d.line([(M, 26), (W - M, 26)], fill=INK, width=3)
-    d.text((M, 34), "ONE DAY · ONE IMAGE · THE WHOLE WORLD", font=font(SANS_BOLD, 19), fill=GREY)
+    draw.line([(MARGIN, 26), (W - MARGIN, 26)], fill=INK, width=3)
+    draw.text((MARGIN, 34), "ONE DAY · ONE IMAGE · THE WHOLE WORLD", font=font(SANS_BOLD, 19), fill=GREY)
     right = "EST. 2026"
-    d.text((W - M - d.textlength(right, font=font(SANS_BOLD, 19)), 34), right,
-           font=font(SANS_BOLD, 19), fill=GREY)
+    draw.text((W - MARGIN - draw.textlength(right, font=font(SANS_BOLD, 19)), 34), right,
+              font=font(SANS_BOLD, 19), fill=GREY)
 
     # --- masthead ---------------------------------------------------------
     mast = "THE WORLD IN ONE PAGE"
-    mf = font(SERIF_BLACK, 71)
-    d.text(((W - d.textlength(mast, font=mf)) / 2, 58), mast, font=mf, fill=INK)
+    mast_font = font(SERIF_BLACK, 71)
+    draw.text(((W - draw.textlength(mast, font=mast_font)) / 2, 58), mast, font=mast_font, fill=INK)
 
     # --- red date band ----------------------------------------------------
-    d.rectangle([M, 148, W - M, 204], fill=RED)
+    draw.rectangle([MARGIN, 148, W - MARGIN, 204], fill=RED)
     date_line = "WEDNESDAY · 25 NOVEMBER 2026"
-    df = font(SANS_BLACK, 38)
-    d.text(((W - d.textlength(date_line, font=df)) / 2, 157), date_line, font=df, fill=WHITE)
+    date_font = font(SANS_BLACK, 38)
+    draw.text(((W - draw.textlength(date_line, font=date_font)) / 2, 157), date_line, font=date_font, fill=WHITE)
 
     # --- lead story -------------------------------------------------------
-    y = 222
-    d.text((M, y), "TOP STORY — STRAIT OF HORMUZ · IRAN", font=font(SANS_BLACK, 21), fill=RED)
-    y += 30
-    hf = font(SERIF_BLACK, 46)
+    y_cursor = 222
+    draw.text((MARGIN, y_cursor), "TOP STORY — STRAIT OF HORMUZ · IRAN", font=font(SANS_BLACK, 21), fill=RED)
+    y_cursor += 30
+    lead_head_font = font(SERIF_BLACK, 46)
     for line in ["Two Tankers Hit Mines", "in Strait of Hormuz"]:
-        d.text((M, y), line, font=hf, fill=INK)
-        y += 52
-    y += 4
-    bf = font(SANS, 22)
+        draw.text((MARGIN, y_cursor), line, font=lead_head_font, fill=INK)
+        y_cursor += 52
+    y_cursor += 4
+    lead_body_font = font(SANS, 22)
     lead = ("Iran's Revolutionary Guard said two oil tankers struck naval mines "
             "and caught fire in the strait. Tehran said the vessels had taken "
             "an unauthorised route, as fears for energy shipping grew.")
-    for line in wrap(d, lead, bf, CW):
-        d.text((M, y), line, font=bf, fill=(52, 48, 40))
-        y += 26
-    y += 8
-    d.line([(M, y), (W - M, y)], fill=INK, width=2)
-    y += 16
+    for line in wrap(draw, lead, lead_body_font, CONTENT_WIDTH):
+        draw.text((MARGIN, y_cursor), line, font=lead_body_font, fill=BODY_INK)
+        y_cursor += 26
+    y_cursor += 8
+    draw.line([(MARGIN, y_cursor), (W - MARGIN, y_cursor)], fill=INK, width=2)
+    y_cursor += 16
 
     # --- two-column grid --------------------------------------------------
-    col_w = (CW - 40) // 2
-    x1, x2 = M, M + col_w + 40
-    grid_top = y
+    col_w = (CONTENT_WIDTH - COLUMN_GUTTER) // 2
+    x1, x2 = MARGIN, MARGIN + col_w + COLUMN_GUTTER
+    grid_top = y_cursor
     blocks_left = [
         ("MIDDLE EAST · SAUDI ARABIA",
          "Houthis Hit Riyadh Tower, Ras Tanura Refinery",
@@ -142,41 +169,44 @@ def main():
          "Sudanese rights group Emergency Lawyers said paramilitary drone "
          "strikes killed 19 and wounded 20."),
     ]
-    row_h = 140
-    for i in range(3):
-        draw_block(d, x1, grid_top + i * row_h, col_w, *blocks_left[i])
-        draw_block(d, x2, grid_top + i * row_h, col_w, *blocks_right[i])
+    for row_index in range(3):
+        draw_block(draw, x1, grid_top + row_index * GRID_ROW_HEIGHT, col_w, *blocks_left[row_index])
+        draw_block(draw, x2, grid_top + row_index * GRID_ROW_HEIGHT, col_w, *blocks_right[row_index])
     # column divider
-    mid = M + col_w + 20
-    d.line([(mid, grid_top + 2), (mid, grid_top + 3 * row_h - 22)], fill=(196, 188, 168), width=2)
-    y = grid_top + 3 * row_h - 4
+    mid = MARGIN + col_w + COLUMN_GUTTER // 2
+    draw.line([(mid, grid_top + 2), (mid, grid_top + 3 * GRID_ROW_HEIGHT - 22)], fill=DIVIDER_GREY, width=2)
+    y_cursor = grid_top + 3 * GRID_ROW_HEIGHT - 4
 
     # --- markets band -----------------------------------------------------
-    d.rectangle([M, y, W - M, y + 52], fill=BAND)
-    markets = "MARKETS  ·  S&P 500 -0.5%  ·  NASDAQ -1.5%  ·  DOW +0.9%  ·  NIKKEI -2.8%  ·  KOSPI -6.2%  ·  BRENT $87.8"
-    size = 23
-    while size > 12 and d.textlength(markets, font=font(SANS_BOLD, size)) > CW - 32:
-        size -= 1
-    mkf = font(SANS_BOLD, size)
-    d.text(((W - d.textlength(markets, font=mkf)) / 2, y + 14), markets, font=mkf, fill=WHITE)
-    y += 58
+    MARKETS_BAND_HEIGHT = 52
+    draw.rectangle([MARGIN, y_cursor, W - MARGIN, y_cursor + MARKETS_BAND_HEIGHT], fill=BAND)
+    market_items = ["MARKETS", "S&P 500 -0.5%", "NASDAQ -1.5%", "DOW +0.9%",
+                    "NIKKEI -2.8%", "KOSPI -6.2%", "BRENT $87.8"]
+    markets = "  ·  ".join(market_items)
+    markets_font = fit_font(draw, markets, 23, CONTENT_WIDTH - 32, SANS_BOLD)
+    draw.text(((W - draw.textlength(markets, font=markets_font)) / 2, y_cursor + 14), markets, font=markets_font, fill=WHITE)
+    y_cursor += 58
 
     # --- in brief ---------------------------------------------------------
-    brief = ("IN BRIEF — Shenzhou-24 docks at Tiangong with Pakistan's first astronaut aboard · "
-             "Pope Leo XIV laments COP31 failure · Colombia police free supermarket hostages · "
-             "Dell's record quarter on AI servers")
-    brf = font(SANS, 19)
-    for line in wrap(d, brief, brf, CW):
-        d.text((M, y), line, font=brf, fill=(52, 48, 40))
-        y += 24
-    y += 4
-    d.line([(M, y), (W - M, y)], fill=INK, width=3)
+    brief_items = ["Shenzhou-24 docks at Tiangong with Pakistan's first astronaut aboard",
+                   "Pope Leo XIV laments COP31 failure",
+                   "Colombia police free supermarket hostages",
+                   "Dell's record quarter on AI servers"]
+    brief = "IN BRIEF — " + " · ".join(brief_items)
+    brief_font = font(SANS, 19)
+    for line in wrap(draw, brief, brief_font, CONTENT_WIDTH):
+        draw.text((MARGIN, y_cursor), line, font=brief_font, fill=BODY_INK)
+        y_cursor += 24
+    y_cursor += 4
+    draw.line([(MARGIN, y_cursor), (W - MARGIN, y_cursor)], fill=INK, width=3)
     foot = "Every story on this page was reported on Wednesday 25 November 2026."
-    ff = font(SANS_BOLD, 18)
-    d.text(((W - d.textlength(foot, font=ff)) / 2, y + 8), foot, font=ff, fill=GREY)
+    foot_font = font(SANS_BOLD, 18)
+    draw.text(((W - draw.textlength(foot, font=foot_font)) / 2, y_cursor + 8), foot, font=foot_font, fill=GREY)
 
     img.save("entry.png", optimize=True)
-    print("wrote entry.png")
+    with Image.open("entry.png") as saved:
+        assert saved.size == (W, H) and saved.mode == "RGB", f"bad output: {saved.size} {saved.mode}"
+    print(f"wrote entry.png ({os.path.getsize('entry.png')} bytes, verified 1024x1024 RGB)")
 
 
 if __name__ == "__main__":
